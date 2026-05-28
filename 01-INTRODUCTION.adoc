@@ -130,9 +130,9 @@ Unlike generic CRM solutions, this backend understands real estate:
 
 == How It Works: The Sales Lifecycle
 
-[source,asciidoc]
-[plantuml, target="my-diagram", format="svg"]
-----
+image::https://www.plantuml.com/plantuml/png/TL9DRzim3BthLx2NeJiaNlTnoM5ebsv3W7R8adrSSc4i9XOgKvv49Sk_d-JKTOsv5vi0ttjyJ-Hr4FGIQwikfAAQeB5eM5resXackFczNlwyluDAf0cpel1udEwDL74R0_dIiH3Bj7HrWSTWSHloVs9I8qnspa-I6cVrud3rVlgcq2Q8kd2D6CTG8UkZDoB483wImbASXq_nH1umm3ONglt2v2DyhXlhJaGmWmKSaGN4PGmqtZNavQIU49C4F_Dcy9K4q5emdFpKc2Uh7fc0yzNz3AwcCFU4GiMYRfoN3TyHwikpbqnzhH8kmszHS8k1Ph1ERWbimhK8rNLWqgbc3LZSdgdF8ZnsK6lIEKKu1Q5wnDRRpXQiw4yqdchYvEsoYmobDqBUu8lsVC-3ev5gmwrXP0tKJSCGp9upP2J3iy5ZKM28A5ktUYJAkodSQ0rVdBNkE8dDXhCTOFehW6Lx4Az0J4ql9Tbrp16JJwelMEpxeQn8HvijVdDYTeRySDZtIFxK3mkW8mqdThoSNABdZ7X660htA_ymXJLnzmB9oXbMOfjTNByFJGTJakgemvctPCqXMomTxuolXu_Tt_tQ2C4l4umKoyenmHojLUVky7MoE2nD-K2wMD6XfMmudJui7y-io8W5YwSmjboOzQ5M5AAL_tTuZ_wXVoJ0i64-Pz9fxx7HA0H1S4yZwvttKHE9m9jz9U1skQi0VbJUnNtbeYGZqLh0g8s0U3HMGSOTAmTbXRmddMeKGCu5iQ9KP4rrdQfOsty0[Sales Flow]
+
+////
 @startuml
 !theme plain
 !define AWSPUML https://raw.githubusercontent.com/awslabs/aws-icons-for-plantuml/v14.0/dist
@@ -174,7 +174,7 @@ note right of CRM
   of who changed what and when
 end note
 @enduml
-----
+////
 
 ---
 
