@@ -1,0 +1,297 @@
+= 1. CRM Backend: Introduction & Vision
+:doctype: article
+:toc: right
+:toc-title: Contents
+:source-highlighter: coderay
+
+== Executive Summary
+
+This CRM Backend is a modern, scalable Customer Relationship Management system designed to empower real estate organizations. It manages the complete sales lifecycle—from lead acquisition through deal closure—while providing real-time collaboration features, advanced notification systems, and comprehensive audit trails.
+
+=== Problem Statement
+
+Real estate businesses struggle with:
+* **Scattered Information**: Leads tracked across multiple platforms (emails, calls, spreadsheets)
+* **Poor Coordination**: Sales teams lack visibility into pipeline and customer interactions
+* **Manual Processes**: Time-consuming data entry and follow-up management
+* **Scalability Issues**: Legacy systems cannot handle growth without architectural changes
+* **Compliance Gaps**: Insufficient audit trails and activity tracking for accountability
+
+=== Solution Approach
+
+The CRM Backend provides:
+* **Centralized Lead Management**: Single source of truth for all customer interactions
+* **Real-time Collaboration**: Multiple users can work on shared leads and requirements simultaneously
+* **Intelligent Follow-up System**: Automated reminders and notifications for timely customer engagement
+* **Multi-tenant Architecture**: Support for multiple organizations with complete data isolation
+* **Audit & Compliance**: Comprehensive activity logs and tenant subscription management
+
+---
+
+== Why This CRM Solution?
+
+=== Key Differentiators
+
+==== 1. **Microservices-Ready Architecture**
+[source]
+----
+Traditional Monolith          Modern Service-Oriented
+├── API Server      →        ├── Main API (REST)
+├── Notifications   →        ├── Notifier Service (Async)
+└── Reports         →        └── Parser Service (Async)
+----
+
+The system is organized into distinct services that can:
+* Scale independently based on load
+* Be deployed and updated without downtime
+* Use different technology stacks if needed
+* Isolate failures to specific components
+
+==== 2. **Built for Real Estate Sales Workflows**
+
+Unlike generic CRM solutions, this backend understands real estate:
+
+* **Property Requirements**: Area, budget, facing, society, vastu, floor, prefereed society, property type(flat/plot etc), purpose(investment/self use)
+* **Lead Stages**: New → Interested → Negotiating → Closed
+* **Channel Partners**: Track commissions and collaboration
+* **Site Visits**: Coordinate attendance and follow-ups
+* **Compliance**: Tenant-level subscription management and enforced access control
+
+==== 3. **Mobile-First Design**
+
+* JWT-based stateless authentication for native mobile apps
+* Expo Push Notifications for real-time alerts
+* Optimized endpoints for bandwidth-constrained environments
+* Offline-capable token refresh mechanism
+
+==== 4. **Enterprise-Grade Security**
+
+* Role-based access control (Owner vs. Employee)
+* Multi-factor tenant isolation with subscription validation
+* Rate limiting to prevent abuse
+* SSL/TLS encryption in transit
+* Bcrypt password hashing with configurable cost
+* Refresh token rotation with SHA-256 hashing
+
+==== 5. **Developer-Friendly**
+
+* Clear separation of concerns (routing, middleware, business logic, data access)
+* Structured JSON logging for easy debugging
+* Comprehensive error handling with user-friendly messages
+* Well-documented API with consistent response formats
+* Environment-based configuration
+
+---
+
+== Core Value Propositions
+
+=== For Sales Managers
+
+[cols="40%,60%"]
+|===
+| Feature | Benefit
+
+| Dashboard & Pipeline View | Real-time visibility into sales funnel and team performance
+| Lead Distribution | Intelligent assignment balancing team workload
+| Activity Tracking | Know what each team member is doing and when
+| Follow-up Reminders | Never miss a customer follow-up opportunity
+| Performance Analytics | Data-driven insights for team optimization
+|===
+
+=== For Sales Representatives
+
+[cols="40%,60%"]
+|===
+| Feature | Benefit
+
+| Mobile Access | Manage leads on-the-go from job sites
+| Lead Details | Complete customer history and interaction context
+| Task Management | Clear follow-up actions with timestamps
+| Notifications | Real-time alerts for important updates
+| Communication History | Never lose track of customer conversations
+|===
+
+=== For Organization Leadership
+
+[cols="40%,60%"]
+|===
+| Feature | Benefit
+
+| Multi-tenant Support | Manage multiple business units in one platform
+| Audit Trails | Complete compliance and accountability records
+| Subscription Management | Control access and enforce licensing
+| Scalable Infrastructure | Grow without rebuilding the system
+| Cost Efficiency | Pay for what you use with container-based deployment
+|===
+
+---
+
+== How It Works: The Sales Lifecycle
+
+[source,asciidoc]
+[plantuml, target="my-diagram", format="svg"]
+----
+@startuml
+!theme plain
+!define AWSPUML https://raw.githubusercontent.com/awslabs/aws-icons-for-plantuml/v14.0/dist
+!option handwritten true
+actor Buyer as buyer
+buyer -> Employee : I want to buy property
+Employee --> buyer : Get all information
+
+Employee -> CRM: 1. Create/Import\nLead(Buyer info)
+CRM -> Database: Store lead info
+Database --> CRM: Lead ID
+CRM --> Employee: Lead added to system
+
+Employee -> CRM: 2. Create Requirement\n(property criteria)
+CRM -> Database: Store requirement with\nlead and employee assignment
+Database --> CRM: Requirement ID
+CRM --> Employee : Requirement created
+
+Employee -> CRM: 3. Add Follow-up\nwith next action & time
+CRM -> Database: Store follow-up
+Database --> CRM: Follow-up ID
+CRM --> Employee : Follow-up scheduled
+
+Notifier -> Database: Query follow-ups due
+Database --> Notifier: Return due follow-ups
+
+Notifier -> Employee: 5. Send Followup Notification to employee device
+Employee--> Notifier: Delivery confirmed
+
+Employee -> buyer : Site Visit/Phone Call
+buyer --> Employee : Not Picked/Revisit/\nBuy Property/Not Intrested
+
+Employee -> CRM : Followup Result
+CRM -> Database: Mark follow-up as\nnotified & update stage
+Database --> CRM: Confirmed
+
+note right of CRM
+  Throughout: Full audit trail
+  of who changed what and when
+end note
+@enduml
+----
+
+---
+
+== System Characteristics
+
+=== Reliability & Uptime
+
+* **Target SLA**: 99.5% uptime for production deployments
+* **Connection Pooling**: Reuses database connections efficiently
+* **Health Checks**: Continuous liveness and readiness probes
+* **Graceful Shutdown**: Drains in-flight requests before terminating
+* **Automatic Retries**: Transient failures are retried automatically
+
+=== Scalability
+
+* **Horizontal Scaling**: Add more instances behind load balancer
+* **Stateless Design**: No sticky sessions or server-local state
+* **Database Optimization**: Indexes on frequently queried columns
+* **Connection Limits**: Configurable pool size to prevent resource exhaustion
+
+=== Security
+
+* **Defense in Depth**: Multiple security layers (API, middleware, database)
+* **Input Validation**: All user inputs sanitized
+* **Authorization Checks**: Every endpoint validates permissions
+* **Encrypted Passwords**: Bcrypt with salt
+* **Token Security**: Short-lived access tokens + refresh rotation
+
+=== Observability
+
+* **Structured Logging**: JSON logs for easy parsing and analysis
+* **Request Tracing**: Request IDs for tracking through systems
+* **Error Tracking**: Detailed error messages with context
+* **Performance Metrics**: Response times and throughput monitoring
+
+---
+
+== Technology Decisions & Rationale
+
+=== Why Go?
+
+* **Performance**: Excellent throughput, low latency, fast startup
+* **Concurrency**: Goroutines handle thousands of concurrent connections
+* **Deployment**: Single binary, no runtime dependencies
+* **Production-Ready**: Used by Docker, Kubernetes, Grafana, etc.
+* **Team Expertise**: Growing adoption in modern backend development
+
+=== Why PostgreSQL?
+
+* **ACID Transactions**: Guarantees data consistency
+* **Advanced Features**: JSON support, partial indexes, CTEs for complex queries
+* **Reliability**: Trusted by financial systems and mission-critical apps
+* **Scaling**: Table partitioning and replication strategies available
+* **Open Source**: No vendor lock-in, active community
+
+=== Why Docker?
+
+* **Consistency**: Identical environment from dev to production
+* **Isolation**: Services don't interfere with each other
+* **Reproducibility**: Same image runs everywhere
+* **Orchestration**: Works with Kubernetes, Docker Swarm, or managed services
+* **Efficiency**: Lightweight compared to VMs
+
+---
+
+== Getting Started
+
+=== For Stakeholders
+Read link:./architecture/02-SYSTEM-ARCHITECTURE.adoc[System Architecture] to understand:
+* System components and their interactions
+* Data flow through the system
+* Integration points with mobile frontend
+
+=== For Developers
+Read link:./architecture/03-CORE-MODULES.adoc[Core Modules] to understand:
+* How each module works
+* Where to make changes for specific features
+* Dependencies between modules
+
+=== For DevOps/SRE
+Read link:./deployment/07-DEPLOYMENT-GUIDE.adoc[Deployment Guide] to understand:
+* How to run locally
+* How to deploy to production
+* Configuration and environment variables
+* Scaling strategies
+
+---
+
+== Roadmap & Future Vision
+
+=== Phase 1 (Current)
+* ✅ Lead and requirement management
+* ✅ Real-time notifications
+* ✅ Multi-tenant support
+* ✅ Mobile integration (Expo)
+
+=== Phase 2 (Planned)
+* Advanced analytics and reporting
+* Artificial Intelligence for lead scoring
+* Integration with email and SMS services
+* Advanced permission model (role-based access)
+
+=== Phase 3 (Future)
+* Workflow automation and custom pipelines
+* Marketplace for third-party integrations
+* AI-powered chatbot for customer interactions
+* Mobile offline-first sync
+
+---
+
+== Document References
+
+* link:./architecture/02-SYSTEM-ARCHITECTURE.adoc[System Architecture]
+* link:./architecture/03-CORE-MODULES.adoc[Core Modules]
+* link:./database/04-DATABASE-DESIGN.adoc[Database Design]
+* link:./design-patterns/05-SYSTEM-DESIGN-PRINCIPLES.adoc[System Design Principles]
+* link:./api/06-API-REFERENCE.adoc[API Reference]
+* link:./deployment/07-DEPLOYMENT-GUIDE.adoc[Deployment Guide]
+
+---
+
+*Last Updated: May 2026*
