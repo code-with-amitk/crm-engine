@@ -1,0 +1,159 @@
+= CRM Backend System Documentation
+:doctype: book
+:toc: left
+:toc-title: Documentation Index
+:source-highlighter: coderay
+:icons: font
+:sectnumlevels: 3
+
+== Overview
+
+This documentation provides a comprehensive technical reference for the CRM Backend application. The CRM system is built using Go, PostgreSQL, and containerized with Docker, designed to manage sales pipelines, leads, employee workflows, and multi-tenant operations.
+
+=== Document Structure
+
+* **link:./01-INTRODUCTION.adoc[1. Introduction & Vision]** - Business context and system goals
+* **link:./architecture/02-SYSTEM-ARCHITECTURE.adoc[2. System Architecture]** - High-level system design and components
+* **link:./architecture/03-CORE-MODULES.adoc[3. Core Modules]** - In-depth module documentation
+* **link:./database/04-DATABASE-DESIGN.adoc[4. Database Design]** - Schema, relationships, and data models
+* **link:./design-patterns/05-SYSTEM-DESIGN-PRINCIPLES.adoc[5. System Design Principles]** - ACID, Availability, Consistency, Fault Tolerance
+* **link:./api/06-API-REFERENCE.adoc[6. API Reference]** - Complete REST API documentation
+* **link:./deployment/07-DEPLOYMENT-GUIDE.adoc[7. Deployment Guide]** - Docker, Kubernetes, Cloud deployment
+* **link:./integration/08-FRONTEND-INTEGRATION.adoc[8. Frontend Integration]** - React Native mobile app integration
+* **link:./deployment/09-OPERATIONS-AND-MONITORING.adoc[9. Operations & Monitoring]** - Logging, observability, troubleshooting
+
+---
+
+== Quick Start Links
+
+* **For Architects**: Start with link:./architecture/02-SYSTEM-ARCHITECTURE.adoc[System Architecture] and link:./design-patterns/05-SYSTEM-DESIGN-PRINCIPLES.adoc[Design Principles]
+* **For Backend Developers**: Read link:./architecture/03-CORE-MODULES.adoc[Core Modules] and link:./api/06-API-REFERENCE.adoc[API Reference]
+* **For DevOps Teams**: See link:./deployment/07-DEPLOYMENT-GUIDE.adoc[Deployment Guide] and link:./deployment/09-OPERATIONS-AND-MONITORING.adoc[Operations]
+* **For Frontend Developers**: Refer to link:./integration/08-FRONTEND-INTEGRATION.adoc[Frontend Integration]
+* **For DBAs**: Check link:./database/04-DATABASE-DESIGN.adoc[Database Design]
+
+---
+
+== Key Features
+
+* *Multi-Tenant Architecture*: Secure logical isolation of tenant data
+* *JWT-Based Authentication*: Stateless authentication with token refresh mechanism
+* *Rate Limiting*: Distributed-ready rate limiting (login & user-level)
+* *Real-time Notifications*: Expo Push Notifications integration for mobile alerts
+* *Comprehensive Logging*: Structured JSON logging with Zap
+* *API Security*: CORS support, SSL/TLS termination via Nginx reverse proxy
+* *Database Reliability*: Connection pooling, transaction management, cascading deletes
+* *Scalable Deployment*: Docker Compose for local development, ready for Kubernetes
+
+---
+
+== Technology Stack
+
+[cols="20%,35%,45%"]
+|===
+| Component | Technology | Purpose
+
+| Runtime | Go 1.24 | Backend API and services
+| Database | PostgreSQL 16 | Primary data store
+| Web Framework | Gorilla Mux | HTTP routing
+| Authentication | JWT (HS256) | Stateless authentication
+| Logging | Zap (Uber) | Structured logging
+| Containerization | Docker Compose | Local dev & deployment
+| Reverse Proxy | Nginx | SSL termination & routing
+| Notifications | Expo Push | Mobile push notifications
+| Observability | Grafana + Loki | Logging & monitoring
+|===
+
+---
+
+== System Requirements
+
+=== Development Environment
+
+* Go 1.24 or higher
+* PostgreSQL 16 or compatible
+* Docker & Docker Compose
+* Git
+
+=== Production Deployment
+
+* Kubernetes 1.28+ (or Docker Swarm)
+* PostgreSQL 16 with backups
+* Nginx/Reverse proxy with SSL
+* 2+ GB RAM per container
+* At least 50 GB storage for database
+
+---
+
+== Architecture at a Glance
+
+[source, text]
+----
+                                                                                        ┌────────────────────────────┐ 
+                                                                                        | Property Hosting Portals   |
+                                                                                        │ 99acre / magicbricks       │
+                                                                                        └─────────────┬───────────────┘
+                                                                                                      |send mail
+┌─────────────────────────────┐ ┌─────────────────────────────┐                         ┌─────────────▼──────────────┐
+│ Web (Chrome/firefox/.. )    │ │ REACT NATIVE MOBILE APP     │                         │ gmail.com / yahoo.com      │
+│ https://crm-hostname.com    │ │ (iOS & Android via Expo)    │<-------                 └─────────────┬──────────────┘
+└────────────────────────┬────┘ └─────────────┬───────────────┘        |                              |forwarding rule
+                         │                    │                        |                       ┌──────▼─────────┐     
+                    HTTPS/REST <--------------                         |                       │ IMAP / POP     |
+                         │                                             |                       └────────┬───────┘
+┌────────────────────────▼───────────────────────────┐                 |                                |
+│ NGINX (Reverse Proxy/ SSL Terminator)  SIDECAR     │       ┌─────────|─────────────┐                  |
+│ api.ydadigitals.com → 443/80 → 8080                │       | Expo Notification Svc |                  |
+└────────────────────────┬───────────────────────────┘       └─────────┬─────────────┘                  |
+                        HTTP/REST                                      |                                |
+                         │               |--send async Notification----|                                |
+                     ┌───▼─────┐     ┌───|────┐   ┌────────┐                                            |
+                     │  App    │     │Notifier│   │Email   │<-------------------------------------------          
+                     │:8080    │     │        │   │ Parser │
+                     │(Daemon) │     │(Daemon)│   │(Daemon)│
+                     └─|──┬────┘     └───┬────┘   └───┬────┘
+         |---app.log---|  |             /\            |
+         |                │              |            |
+   ┌─────▼─────┐   ┌──────▼───────┐      |         add leads
+   │   Alloy   │   │ PostgreSQL   │------|            |
+   │(Port 1234)|   │ (Port 5432)  |                   |
+   |           |   │ Multi-tenant │<------------------|
+   └───────────┘   └──────────────┘
+        │
+    ┌───▼────┐ 
+    │  Loki   │
+    │:3100    │
+    └────┬────┘
+         │
+  ┌──────▼───────┐
+  │ Grafanna     │
+  │ (Port 3000)  │
+  └──────┬───────┘
+         │
+  ┌──────▼───────┐
+  | UI           |
+  | Metrics/Logs |
+  └──────┬───────┘
+----
+
+---
+
+== Contributing & Versioning
+
+* See individual module documentation for contribution guidelines
+* Use semantic versioning for releases
+* All changes require code review and CI/CD validation
+
+---
+
+== Support & Contact
+
+For questions regarding this documentation:
+* Technical Issues: Create a GitHub issue
+* Architecture Consultation: Contact the Platform Architecture team
+* Deployment Help: Contact DevOps team
+
+---
+
+*Last Updated: May 2026*
+*Version: 1.0*
