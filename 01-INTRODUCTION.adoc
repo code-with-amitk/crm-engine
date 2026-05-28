@@ -11,6 +11,7 @@ This CRM Backend is a modern, scalable Customer Relationship Management system d
 === Problem Statement
 
 Real estate businesses struggle with:
+
 * **Scattered Information**: Leads tracked across multiple platforms (emails, calls, spreadsheets)
 * **Poor Coordination**: Sales teams lack visibility into pipeline and customer interactions
 * **Manual Processes**: Time-consuming data entry and follow-up management
@@ -20,6 +21,7 @@ Real estate businesses struggle with:
 === Solution Approach
 
 The CRM Backend provides:
+
 * **Centralized Lead Management**: Single source of truth for all customer interactions
 * **Real-time Collaboration**: Multiple users can work on shared leads and requirements simultaneously
 * **Intelligent Follow-up System**: Automated reminders and notifications for timely customer engagement
