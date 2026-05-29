@@ -1,0 +1,852 @@
+= 3. Core Modules
+:doctype: article
+:toc: right
+:toc-title: Contents
+:source-highlighter: coderay
+
+== Overview
+
+The CRM Backend is organized into well-defined modules, each with a specific responsibility. This document provides an in-depth look at each module, its purpose, and internal implementation.
+
+---
+
+## Module Directory Structure
+
+[source, text]
+----
+go-server/
+├── bootstrap/          # Application initialization
+├── db_utils/           # Data access layer
+├── jwt_mod/            # JWT authentication & claims
+├── logging/            # Structured logging setup
+├── middleware/         # HTTP middleware (auth, CORS, etc.)
+├── models/             # Data structures and types
+├── notifications/      # Push notification integration
+├── ratelimit/          # Rate limiting implementation
+├── rest_endpoints/     # HTTP request handlers
+├── utils/              # Utility functions
+├── main.go             # Application entry point
+└── docker-compose.yml  # Containerized deployment
+----
+
+---
+
+== 1. Bootstrap Module (`bootstrap/`)
+
+=== Purpose
+Initializes the application by setting up logger, DB connections. This module is general purpose other initializations can be moved into it if required.
+
+=== Key Responsibilities
+* Create logger instances (Zap)
+* Connect to PostgreSQL
+* Handle initialization errors
+
+=== Code Structure
+
+[source, go]
+----
+func BootstrapLogger(id int16) (*zap.SugaredLogger, error) {
+  // Creates logger with config ID
+  // id=1: App logger
+  // id=2: Notifier logger
+  // id=3: Parser logger
+}
+
+func BootstrapDB(logger *zap.SugaredLogger) (*sql.DB, error) {
+  // Connects to PostgreSQL
+  // Creates connection pool
+  // Returns database handle
+}
+----
+
+=== Configuration
+[cols="25%,20%,55%"]
+|===
+| Environment Variable | Default | Purpose
+
+| DB_HOST | localhost | PostgreSQL server hostname
+| DB_PORT | 5432 | PostgreSQL port
+| DB_USER | postgres | Database username
+| DB_PASSWORD | postgres | Database password
+| DB_NAME | crm | Database name
+| APP_LOG_LEVEL | info | Logging level (debug, info, warn, error)
+| APP_LOG_TO | stdout | Log output (filename or stdout)
+|===
+
+=== Initialization Flow
+
+[source, text]
+----
+main()
+  ↓
+BootstrapLogger(id=1)
+  ├─> logging.InitLogger()
+  └─> returns *zap.SugaredLogger
+  ↓
+BootstrapDB(logger)
+  ├─> db_utils.Connect_to_db()
+  ├─> Creates connection pool (max 25 connections)
+  └─> returns *sql.DB
+  ↓
+Application ready for requests
+----
+
+---
+
+## 2. Database Utils Module (`db_utils/`)
+
+=== Purpose
+Provides data access layer with type-safe database operations.
+
+=== Key Components
+
+==== Database Connection (`connect.go`)
+
+[source, go]
+----
+type ConnectionConfig struct {
+    Host     string
+    Port     string
+    User     string
+    Password string
+    DBName   string
+}
+
+func Connect_to_db(logger) (*sql.DB, error) {
+    // 1. Read environment variables
+    // 2. Build DSN (Data Source Name)
+    // 3. sql.Open() - creates connection pool
+    // 4. Ping() - verifies connectivity
+    // 5. Returns *sql.DB
+}
+----
+
+==== Data Models & Operations
+
+Each table has dedicated function and has 1 associated file for carrying all DB operations for that table:
+
+[cols="20%,25%,55%"]
+|===
+| File | Primary Table | Key Operations
+
+| `employeeTable.go` | employee | GetEmployee, GetEmployees, InsertEmployee, UpdateEmployee, DeleteEmployee
+| `leadsTable.go` | leads | GetLead, GetLeads, InsertLead, UpdateLead, DeleteLead
+| `requirementsTable.go` | requirements | GetRequirement, CreateRequirement, UpdateRequirement
+| `followupTable.go` | followup | GetFollowup, CreateFollowup, GetDueFollowups
+| `passwordTable.go` | password | SetPassword, GetPassword, VerifyPassword
+| `refreshTokenTable.go` | refresh_tokens | SaveRefreshToken, ValidateRefreshToken, RevokeRefreshToken
+| `tenantsTable.go` | tenants | GetTenant, GetTenantSubscription, IsTenantSubscriptionOK
+| `pushtokenTable.go` | pushtokens | SavePushToken, GetPushToken, DeletePushToken
+| `callAggregationDailyTable.go` | call_aggregation_daily | AggregateCallsDaily
+| `attendanceTable.go` | attendance | RecordAttendance, GetAttendance
+| `channelPartnerTable.go` | channel_partner | GetChannelPartner, GetAllChannelPartners
+|===
+
+==== Error Mapping
+
+The module maps database errors to user-friendly messages:
+
+[source, go]
+----
+func HandleDBError(err error, logger) (int, string, string) {
+    // SQL unique constraint violation
+    if strings.Contains(err.Error(), "duplicate key") {
+        return http.StatusConflict, "duplicate_entry", 
+               "Record already exists"
+    }
+    
+    // Foreign key violation
+    if strings.Contains(err.Error(), "foreign key") {
+        return http.StatusBadRequest, "invalid_reference",
+               "Referenced record does not exist"
+    }
+    
+    // Connection error
+    if strings.Contains(err.Error(), "connection refused") {
+        return http.StatusServiceUnavailable, "db_unavailable",
+               "Database is not available"
+    }
+    
+    // Default
+    return http.StatusInternalServerError, "internal_error",
+           "An error occurred"
+}
+----
+
+==== Transaction Management
+
+[source, go]
+----
+func ExecuteInTransaction(db *sql.DB, fn func(*sql.Tx) error) error {
+    tx, err := db.BeginTx(ctx, nil)
+    if err != nil {
+        return err
+    }
+    defer tx.Rollback()
+    
+    if err := fn(tx); err != nil {
+        return err
+    }
+    
+    return tx.Commit().Error
+}
+----
+
+=== Parameterized Queries (SQL Injection Prevention)
+
+[source, go]
+----
+// ✅ SAFE: Uses parameters
+query := "SELECT * FROM employee WHERE emp_email = $1"
+row := db.QueryRow(query, userEmail)
+
+// ❌ UNSAFE: String concatenation
+query := fmt.Sprintf("SELECT * FROM employee WHERE emp_email = '%s'", userEmail)
+----
+
+---
+
+## 3. JWT Module (`jwt_mod/`)
+
+=== Purpose
+Handles JWT token generation, validation, and claims management.
+
+=== Key Functions
+
+==== Token Generation
+
+[source, go]
+----
+func GenerateJWTToken(claims *Claims, secret string) (string, error) {
+    token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+    return token.SignedString([]byte(secret))
+}
+----
+
+==== Token Validation
+
+[source, go]
+----
+func ValidateJWT(logger, tokenString string) (*Claims, error) {
+    token, err := jwt.ParseWithClaims(tokenString, &Claims{},
+        func(token *jwt.Token) (interface{}, error) {
+            return []byte(os.Getenv("JWT_SECRET")), nil
+        })
+    
+    if err != nil {
+        return nil, err
+    }
+    
+    claims, ok := token.Claims.(*Claims)
+    if !ok || !token.Valid {
+        return nil, ErrInvalidToken
+    }
+    
+    return claims, nil
+}
+----
+
+==== Claims Structure
+
+[source, go]
+----
+type Claims struct {
+    EmployeeID int64
+    TenantID int64
+    RegisteredClaims jwt.RegisteredClaims
+}
+
+// Fields set during login:
+// - EmployeeID: from employee table
+// - TenantID: from employee table
+// - ExpiresAt: NOW() + JWT_ACCESS_EXPIRY_HOURS
+// - IssuedAt: NOW()
+// - Subject: "access_token"
+----
+
+==== Context Management
+
+[source, go]
+----
+func ContextWithClaims(ctx context.Context, claims *Claims) context.Context {
+    return context.WithValue(ctx, "claims", claims)
+}
+
+func ClaimsFromContext(ctx context.Context) *Claims {
+    claims := ctx.Value("claims")
+    if claims == nil {
+        return nil
+    }
+    return claims.(*Claims)
+}
+----
+
+=== Token Lifecycle
+
+[source, text]
+----
+1. LOGIN
+   ├─> POST /login (email + password)
+   ├─> Verify email exists
+   ├─> Hash provided password
+   ├─> Compare with stored hash
+   └─> If match:
+       ├─> Generate Access Token (24h expiry)
+       ├─> Generate Refresh Token (90d expiry)
+       └─> Return both tokens
+
+2. ACCESS TOKEN USAGE
+   ├─> Include in header: Authorization: Bearer {token}
+   ├─> API validates signature
+   ├─> Check expiration (24h)
+   └─> Extract claims for user context
+
+3. TOKEN REFRESH
+   ├─> Access token expired (or about to expire)
+   ├─> POST /token/refresh (with refresh token)
+   ├─> Validate refresh token in database
+   ├─> Check if revoked
+   ├─> If valid:
+   │   ├─> Generate new Access Token
+   │   ├─> Optionally rotate Refresh Token
+   │   └─> Return new Access Token
+   └─> If invalid: Return 401
+
+4. LOGOUT
+   ├─> POST /logout (optional)
+   ├─> Revoke refresh token in database
+   └─> Discard access token on client
+----
+
+---
+
+## 4. Middleware Module (`middleware/`)
+
+=== Purpose
+HTTP middleware for cross-cutting concerns (authentication, subscription validation).
+
+==== Authentication & Subscription Middleware
+
+[source, go]
+----
+func AuthenticationAndSubscriptionCheck(db *sql.DB, logger *zap.SugaredLogger) 
+    func(http.Handler) http.Handler {
+    
+    return func(next http.Handler) http.Handler {
+        return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+            // 1. Extract JWT from Authorization header
+            
+            // 2. Validate JWT signature & expiration
+            
+            // 3. Check tenant subscription
+            sub, err := db_utils.GetTenantSubscription(db, logger, claims.TenantID)
+            
+            // 4. Add claims to request context
+            ctx := jwt_mod.ContextWithClaims(r.Context(), claims)
+            next.ServeHTTP(w, r.WithContext(ctx))
+        })
+    }
+}
+----
+
+---
+
+## 5. Rate Limiting Module (`ratelimit/`)
+
+=== Purpose
+Implements fixed-window rate limiting to prevent abuse.
+
+=== Algorithm
+
+**Fixed-Window Counter**:
+* Divide time into fixed windows (1 minute)
+* Count requests per user/IP in current window
+* Reset at start of new window
+
+[source, text]
+----
+Time
+├─ Window 1: 00:00-00:59 (5 requests allowed, 3 used)
+├─ Window 2: 01:00-01:59 (5 requests allowed, 4 used)
+├─ Window 3: 02:00-02:59 (5 requests allowed, 5 used) ← LIMIT REACHED
+│   └─ 6th request → REJECTED (429 Too Many Requests)
+└─ Window 4: 03:00-03:59 (counter resets)
+----
+
+=== Implementation
+
+[source, go]
+----
+type Limiter struct {
+    mu      sync.Mutex
+    buckets map[string]int  // IP/UserID → count
+    limits  map[string]int  // IP/UserID → limit
+}
+
+func (l *Limiter) Allow(key string) bool {
+    l.mu.Lock()
+    defer l.mu.Unlock()
+    
+    if l.buckets[key] < l.limits[key] {
+        l.buckets[key]++
+        return true
+    }
+    return false
+}
+----
+
+=== Rate Limits
+
+[cols="30%,20%,50%"]
+|===
+| Endpoint | Limit | Purpose
+
+| /login | 5(configurable) per minute (per IP) | Brute-force protection
+| /token/refresh | 5(configurable) per minute (per IP) | Token refresh throttling
+| All other authenticated | 50 per minute (per user) | General API protection
+|===
+
+=== Cleanup
+
+[source, go]
+----
+func (l *Limiter) StartCleanup(interval time.Duration, logger) {
+    go func() {
+        ticker := time.NewTicker(interval)
+        defer ticker.Stop()
+        
+        for range ticker.C {
+            l.mu.Lock()
+            // Clear old buckets
+            for key := range l.buckets {
+                l.buckets[key] = 0  // Reset counter
+            }
+            l.mu.Unlock()
+        }
+    }()
+}
+----
+
+---
+
+## 6. Logging Module (`logging/`)
+
+=== Purpose
+Configures structured JSON logging using Zap.
+
+=== Configuration
+
+[source, go]
+----
+type LogConfig struct {
+    Level      string  // debug, info, warn, error
+    OutputPath string  // "stdout" or filename
+    ServiceID  int16   // 1=app, 2=notifier, 3=parser
+}
+
+func InitLogger(id int16) (*zap.SugaredLogger, error) {
+    config := zap.NewProductionConfig()
+    config.Level = zap.NewAtomicLevelAt(zapcore.InfoLevel)
+    
+    // Load from environment
+    if level, ok := os.LookupEnv("APP_LOG_LEVEL"); ok {
+        config.Level = parseLevel(level)
+    }
+    if output, ok := os.LookupEnv("APP_LOG_TO"); ok {
+        config.OutputPaths = []string{output}
+    }
+    
+    logger, _ := config.Build()
+    return logger.Sugar(), nil
+}
+----
+
+=== Log Levels
+
+[cols="15%,50%,35%"]
+|===
+| Level | When to Use | Example
+
+| DEBUG | Detailed flow information | "Processing request for user 123"
+| INFO | Significant events | "Server started on :8080"
+| WARN | Potential issues | "Slow database query (500ms)"
+| ERROR | Errors that don't stop system | "Failed to send notification"
+|===
+
+=== Log Format (JSON)
+
+[source, json]
+----
+{
+  "level": "info",
+  "timestamp": "2026-05-28T14:30:45Z",
+  "logger": "crm.app",
+  "msg": "User login successful",
+  "user_id": 42,
+  "tenant_id": 1,
+  "ip_address": "192.168.1.100"
+}
+----
+
+---
+
+## 7. REST Endpoints Module (`rest_endpoints/`)
+
+=== Purpose
+HTTP request handlers that implement business logic.
+
+=== Endpoint Categories
+
+==== Authentication Endpoints
+
+[source, go]
+----
+func HandleLogin(db *sql.DB, logger, w, r) {
+    // 1. Parse email/password from JSON body
+    // 2. Query employee by email
+    // 3. Verify password hash
+    // 4. Generate JWT tokens
+    // 5. Return access + refresh tokens
+}
+
+func HandleTokenRefresh(db, logger, w, r) {
+    // 1. Extract refresh token from body
+    // 2. Validate against database (not revoked)
+    // 3. Generate new access token
+    // 4. Return new token
+}
+----
+
+==== Lead Management
+
+[source, go]
+----
+func ViewAllLeads(db, logger, w, r)      // GET all leads (paginated)
+func ViewAllMyLeads(db, logger, w, r)    // GET leads assigned to user
+func GetLead(db, logger, w, r)           // GET single lead by ID
+func CreateLead(db, logger, w, r)        // POST create new lead
+func UpdateLead(db, logger, w, r)        // PUT update lead
+func DeleteLead(db, logger, w, r)        // DELETE lead
+func TransferLead(db, logger, w, r)      // POST move lead to different employee
+----
+
+==== Employee Management
+
+[source, go]
+----
+func GetEmployees(db, logger, w, r)                   // GET all employees
+func GetEmployeeAssociatedDetails(db, logger, w, r)  // GET employee profile
+func InsertEmployee(db, logger, w, r)                // POST create employee
+func UpdateEmployee(db, logger, w, r)                // PUT update employee
+func DeleteEmployee(db, logger, w, r)                // DELETE employee
+----
+
+==== Requirement Management
+
+[source, go]
+----
+func CreateReq (db, logger, w, r)   // POST with full property details
+func UpdateReq (db, logger, w, r)   // PUT update status/details
+func DeleteReq (db, logger, w, r)   // DELETE requirement
+func TransferReq (db, logger, w, r) // POST reassign to different employee
+----
+
+==== Follow-up Management
+
+[source, go]
+----
+func CreateFU(db, logger, w, r)      // POST schedule follow-up
+func GetFU(db, logger, w, r)        // GET follow-ups for requirement
+func GetFUCounts(db, logger, w, r)   // GET stats on follow-ups
+----
+
+==== Health & Status
+
+[source, go]
+----
+func HealthCheck(db, logger, w, r) {
+    // 1. Ping database
+    // 2. Check service availability
+    // 3. Return 200 if healthy, 503 if not
+}
+----
+
+=== Request/Response Pattern
+
+[source, go]
+----
+// Request structure
+type CreateLeadRequest struct {
+    Name      string `json:"name" validate:"required"`
+    Email     string `json:"email" validate:"emailaddress"`
+    Phone     string `json:"phone" validate:"required"`
+    Priority  string `json:"priority"`
+}
+
+// Response structure
+type APIResponse struct {
+    Error  string      `json:"error"`      // error code (empty if success)
+    Body   interface{} `json:"body"`       // response data
+    Status int         `json:"-"`          // HTTP status (not in JSON)
+}
+
+// Usage
+func CreateLead(db, logger, w, r) {
+    var req CreateLeadRequest
+    json.NewDecoder(r.Body).Decode(&req)
+    
+    if Json not valid {
+        utils.WriteJSON(w, 400, "validation_error", err)
+        return
+    }
+    
+    lead, err := db_utils.CreateLeadInDB(db, req)
+    if err != nil {
+        utils.WriteJSON(w, 500, "create_failed", nil)
+        return
+    }
+    
+    utils.WriteJSON(w, 201, "", lead)
+}
+----
+
+---
+
+## 8. Notifications Module (`notifications/`)
+
+=== Purpose
+Integrates with Expo Push Notifications service. It sends async notifications using expo token.
+Frontend app will fetch expo token post password verification and send that to backend.
+
+=== Expo Push Integration
+
+[source, go]
+----
+type PushNotificationRequest struct {
+    To    string `json:"to"`    // Push token from device
+    Title string `json:"title"`
+    Body  string `json:"body"`
+    Data  map[string]string `json:"data"`
+}
+
+func SendExpoNotification(token, title, body string) error {
+    // 1. Build request with Expo format
+    // 2. POST to https://exp.host/--/api/v2/push/send
+    // 3. Handle response
+    // 4. Log result
+}
+----
+
+=== Notification Lifecycle
+
+[source, text]
+----
+1. App registers push token
+   └─> POST /register_push_token
+   ├─> Mobile Device sends token: "ExponentPushToken[...]"
+   └─> crm-engine Store in pushtokens table
+
+2. Notifier daemon discovers due follow-up
+   └─> Query WHERE followuptimestamp <= NOW()
+   ├─> Retrieve employee's push tokens
+   └─> Iterate each token
+
+3. Send notification
+   └─> Call SendExpoNotification()
+   ├─> POST to Expo servers
+   └─> Mark as notified in database
+
+4. Device receives notification
+   └─> Expo SDK shows alert
+   └─> User taps to open app
+   └─> App syncs data
+----
+
+---
+
+## 9. Models Module (`models/`)
+
+=== Purpose
+Defines data structures used throughout the application.
+
+=== Core Structures
+
+[source, go]
+----
+type Employee struct {
+    ID        int
+    Email     string
+    Name      string
+    JoiningDate time.Time
+    TenantID  int
+    Phone     string
+}
+
+type Lead struct {  // that is Customer
+    ID        int
+    Name      string
+    Email     string
+    Phone     string
+    WhatsApp  string
+    Priority  string
+    CreatedAt time.Time
+    TenantID  int
+}
+
+type Requirement struct {    // 1bhk, plot etc
+    ID              int
+    Area            string
+    Budget          string
+    PropertyType    string
+    Size            string
+    Society         string
+    Facing          string
+    Floor           string
+    AssignedToEmpID int
+    LeadID          int
+    Stage           string  // New, Interested, Negotiating, Closed
+    CreatedAt       time.Time
+    UpdatedAt       time.Time
+}
+
+type Followup struct {      // On which lead needs followup
+    ID                  int
+    RequirementID       int
+    Comment             string
+    NextAction          string
+    FollowupTimestamp   time.Time
+    IsNotified          bool
+    CreatedAt           time.Time
+}
+----
+
+---
+
+== 10. Utils Module (`utils/`)
+
+=== Purpose
+Common utility functions used across modules.
+
+=== Key Functions
+
+[source, go]
+----
+// Response writing
+func WriteJSON(w http.ResponseWriter, status int, error string, body interface{})
+func WriteAuthJSON(w, status int, error, message string)
+
+// Data conversion
+func ConvertLeadToJSON(lead *Lead) string
+func ConvertRequirementToJSON(req *Requirement) string
+
+// Lead stage utilities
+func ValidateLeadStage(stage string) bool
+func GetNextStage(currentStage string) string
+
+// Password utilities (not exposed, used internally)
+func HashPassword(password string) (string, error)
+func VerifyPassword(hash, password string) bool
+----
+
+=== Response Format
+
+All API responses follow consistent format:
+
+[source, json]
+----
+{
+  "error": "error_code_or_empty",
+  "body": {
+  }
+}
+
+// Error response:
+{
+  "error": "type",
+  "body": {
+    "msg": "Name field is required"
+  }
+}
+
+// Success (with no body):
+{
+  "error": "",
+}
+----
+
+---
+
+## 11. Main Entry Point
+
+=== Application Startup
+
+[source, go]
+----
+func main() {
+    // 1. Bootstrap logger
+    
+    // 2. Bootstrap database
+    
+    // 3. Create HTTP router
+    
+    // 4. Create rate limiters
+    
+    // 5. Register middleware
+    
+    // 6. Register routes
+    
+    // ... register all routes ...
+    
+    // 7. Start server
+    server := &http.Server{
+        Addr:    ":8080",
+        Handler: cors.Handler(router),
+    }
+    
+    server.ListenAndServe()
+}
+----
+
+---
+
+== Module Dependencies
+
+[source, text]
+----
+main.go
+├─> bootstrap/ (logger + db)
+├─> middleware/ (auth middleware)
+│   ├─> jwt_mod/ (validate tokens)
+│   └─> db_utils/ (check subscription)
+├─> ratelimit/ (throttle requests)
+├─> rest_endpoints/ (handle requests)
+│   ├─> db_utils/ (CRUD operations)
+│   ├─> utils/ (format responses)
+│   └─> logging/ (structured logs)
+├─> notifications/ (Expo integration)
+├─> jwt_mod/ (auth)
+└─> models/ (data structures)
+
+Notifier Service
+├─> bootstrap/ (logger + db)
+├─> db_utils/ (query due follow-ups)
+├─> notifications/ (send Expo push)
+└─> logging/
+
+Parser Service
+├─> bootstrap/ (logger)
+└─> rest_endpoints/ (call main API)
+----
+
+---
+
+== References
+
+* link:../database/04-DATABASE-DESIGN.adoc[Database Design]
+* link:../api/06-API-REFERENCE.adoc[API Reference]
+* link:../deployment/07-DEPLOYMENT-GUIDE.adoc[Deployment Guide]
+* link:../design-patterns/05-SYSTEM-DESIGN-PRINCIPLES.adoc[Design Principles]
+
+---
+
+*Last Updated: May 2026*
