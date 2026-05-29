@@ -89,26 +89,26 @@ This documentation provides a comprehensive technical reference for the CRM Back
 
 [source, text]
 ----
-                                                                                        ┌────────────────────────────┐ 
-                                                                                        | Property Hosting Portals   |
-                                                                                        │ 99acre / magicbricks       │
-                                                                                        └─────────────┬───────────────┘
-                                                                                                      |send mail
-┌─────────────────────────────┐ ┌─────────────────────────────┐                         ┌─────────────▼──────────────┐
-│ Web (Chrome/firefox/.. )    │ │ REACT NATIVE MOBILE APP     │                         │ gmail.com / yahoo.com      │
-│ https://crm-hostname.com    │ │ (iOS & Android via Expo)    │<-------                 └─────────────┬──────────────┘
-└────────────────────────┬────┘ └─────────────┬───────────────┘        |                              |forwarding rule
-                         │                    │                        |                       ┌──────▼─────────┐     
-                    HTTPS/REST <--------------                         |                       │ IMAP / POP     |
-                         │                                             |                       └────────┬───────┘
-┌────────────────────────▼───────────────────────────┐                 |                                |
-│ NGINX (Reverse Proxy/ SSL Terminator)  SIDECAR     │       ┌─────────|─────────────┐                  |
-│ api.ydadigitals.com → 443/80 → 8080                │       | Expo Notification Svc |                  |
-└────────────────────────┬───────────────────────────┘       └─────────┬─────────────┘                  |
-                        HTTP/REST                                      |                                |
-                         │               |--send async Notification----|                                |
-                     ┌───▼─────┐     ┌───|────┐   ┌────────┐                                            |
-                     │  App    │     │Notifier│   │Email   │<-------------------------------------------          
+                                                                    ┌────────────────────────────┐ 
+                                                                    | Property Hosting Portals   |
+                                                                    │ 99acre / magicbricks       │
+                                                                    └─────────────┬──────────────┘
+                                                                                   |send mail
+┌─────────────────────────────┐ ┌─────────────────────────────┐      ┌─────────────▼──────────┐
+│ Web (Chrome/firefox/.. )    │ │ REACT NATIVE MOBILE APP     │      │ gmail.com / yahoo.com  │
+│ https://crm-hostname.com    │ │ (iOS & Android via Expo)    │<--   └──────────┬─────────────┘
+└────────────────────────┬────┘ └─────────────┬───────────────┘  |              |forwarding rule
+                         │                    │                  |       ┌──────▼─────────┐     
+                    HTTPS/REST <--------------                   |       │ IMAP / POP     |
+                         │                                       |       └────────┬───────┘
+┌────────────────────────▼───────────────────────────┐           |                |
+│ NGINX (Reverse Proxy/ SSL Terminator)  SIDECAR     │ ┌─────────|─────────────┐  |
+│ api.ydadigitals.com → 443/80 → 8080                │ | Expo Notification Svc |  |
+└────────────────────────┬───────────────────────────┘ └─────────┬─────────────┘  |
+                        HTTP/REST                                /\               |
+                         │               |send async Notification|                |
+                     ┌───▼─────┐     ┌───|────┐   ┌────────┐                      |
+                     │  App    │     │Notifier│   │Email   │<----------------------          
                      │:8080    │     │        │   │ Parser │
                      │(Daemon) │     │(Daemon)│   │(Daemon)│
                      └─|──┬────┘     └───┬────┘   └───┬────┘
