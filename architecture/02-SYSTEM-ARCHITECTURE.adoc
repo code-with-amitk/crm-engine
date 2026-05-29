@@ -1,0 +1,602 @@
+= 2. System Architecture
+:doctype: article
+:toc: right
+:toc-title: Contents
+:source-highlighter: coderay
+
+== Overview
+
+The CRM Backend employs a layered, service-oriented architecture designed for scalability, maintainability, and reliability. The system consists of multiple containerized services that work together to provide a complete CRM solution.
+
+== High-Level Architecture Diagram
+
+[source, text]
+----
+┌──────────────────────────────────────────────────────────────────────┐
+│                      REACT NATIVE MOBILE APP                          │
+│                   (iOS & Android via Expo SDK)                        │
+└────────────────────────────────┬─────────────────────────────────────┘
+                                 │
+                          ┌──────▼──────┐
+                          │ HTTPS/REST  │
+                          │    (TCP)    │
+                          └──────┬──────┘
+                                 │
+┌────────────────────────────────▼─────────────────────────────────────┐
+│                   NGINX (Reverse Proxy & SSL)                         │
+│              api.ydadigitals.com (port 443) → :8080                   │
+│  ✓ SSL/TLS Termination  ✓ Load Balancing  ✓ CORS Headers             │
+└────────────────────────────────┬─────────────────────────────────────┘
+                                 │
+        ┌────────────────────────┼────────────────────────┐
+        │                        │                        │
+   ┌────▼──────┐          ┌──────▼────┐          ┌───────▼────┐
+   │   APP     │          │ NOTIFIER  │          │   PARSER   │
+   │:8080/REST │          │ :8081/    │          │  :8082/    │
+   │           │          │  (Daemon) │          │  (Daemon)  │
+   │ ✓ Routes  │          │           │          │            │
+   │ ✓ Auth    │          │ ✓ Polls   │          │ ✓ Ingests  │
+   │ ✓ CRUD    │          │   DB      │          │   emails   │
+   │ ✓ Logic   │          │           │          │            │
+   │ ✓ Validation         │ ✓ Pushes  │          │ ✓ Parses   │
+   │           │          │   Expos   │          │   data     │
+   └────┬──────┘          └──────┬────┘          └───────┬────┘
+        │                        │                        │
+        └────────────────────────┼────────────────────────┘
+                                 │
+                          ┌──────▼──────────┐
+                          │  PostgreSQL 16  │
+                          │ Multi-tenant DB │
+                          │ (port 5432)     │
+                          │                 │
+                          │ ✓ Transactions  │
+                          │ ✓ ACID Guarantees
+                          │ ✓ Connection Pool
+                          │ ✓ Replication   │
+                          └─────────────────┘
+                                 │
+                          ┌──────▼──────────┐
+                          │  Volume Mounts  │
+                          │  (Persistence)  │
+                          └─────────────────┘
+----
+
+---
+
+== Architectural Layers
+
+=== Layer 1: Transport & Security
+**Components**: Nginx Reverse Proxy
+
+* SSL/TLS termination for HTTPS
+* CORS policy enforcement
+* Request routing to appropriate backend service
+* Load balancing for horizontal scaling
+* DDoS protection and rate limiting
+
+=== Layer 2: API Gateway & HTTP Layer
+**Components**: Go HTTP Server (Gorilla Mux)
+
+* Request handling and routing
+* HTTP method validation (GET, POST, DELETE, etc.)
+* Response formatting and serialization
+* Health check endpoints
+
+=== Layer 3: Authentication & Authorization
+**Components**: JWT Middleware, Auth Handler
+
+* Bearer token extraction from headers
+* JWT signature validation
+* Token expiration checks
+* Tenant subscription verification
+* Permission-based access control
+
+=== Layer 4: Rate Limiting & Throttling
+**Components**: Rate Limit Middleware
+
+* IP-based rate limiting (login endpoints)
+* User-based rate limiting (authenticated endpoints)
+* Fixed-window counter algorithm
+* Graceful rejection with 429 status
+
+=== Layer 5: Business Logic
+**Components**: REST Endpoints, Services
+
+* Lead management logic
+* Requirement processing
+* Follow-up scheduling
+* Employee management
+* Notification triggering
+
+=== Layer 6: Data Access Layer
+**Components**: DB Utils Package
+
+* SQL query building
+* Parameter binding and escaping
+* Connection pool management
+* Transaction handling
+* Error mapping to business errors
+
+=== Layer 7: Persistence
+**Components**: PostgreSQL Database
+
+* ACID-compliant transactions
+* Multi-tenant data isolation
+* Foreign key constraints
+* Indexes for query optimization
+* Automated backups
+
+---
+
+## Component Architecture
+
+=== Core Components
+
+==== 1. **Main API Server** (:8080)
+
+[source, text]
+----
+┌─────────────────────────────────────┐
+│     HTTP Requests from Client       │
+└────────────────┬────────────────────┘
+                 │
+         ┌───────▼────────┐
+         │  HTTP Router   │
+         │  (Gorilla Mux) │
+         └───────┬────────┘
+                 │
+        ┌────────┼────────┐
+        │        │        │
+   ┌────▼──┐ ┌──▼───┐ ┌─▼────┐
+   │ CORS  │ │Auth  │ │Rate  │
+   │Filter │ │Check │ │Limit │
+   └────┬──┘ └──┬───┘ └─┬────┘
+        │       │       │
+        └───────┼───────┘
+                │
+         ┌──────▼──────────┐
+         │ Request Handler │
+         │ (REST Endpoint) │
+         └───────┬─────────┘
+                 │
+         ┌───────▼────────┐
+         │ Business Logic │
+         └───────┬────────┘
+                 │
+         ┌───────▼────────┐
+         │  DB Utils      │
+         │ (Query Builder)│
+         └───────┬────────┘
+                 │
+         ┌───────▼────────┐
+         │  PostgreSQL    │
+         └────────────────┘
+                 │
+         ┌───────▼────────┐
+         │   Response     │
+         │  (JSON/Error)  │
+         └────────────────┘
+----
+
+**Responsibilities:**
+
+* Route HTTP requests to handlers
+* Enforce authentication on protected endpoints
+* Apply rate limiting
+* Transform responses to JSON
+* Handle errors gracefully
+
+==== 2. **Notifier Service** (:8081)
+
+[source, text]
+----
+┌─────────────────────────────────────┐
+│   Notifier Service (Background)     │
+│   (Polls database on interval)      │
+└────────────┬────────────────────────┘
+             │
+       ┌─────▼──────┐
+       │ Read Logger│
+       │ Config     │
+       └─────┬──────┘
+             │
+       ┌─────▼──────────────┐
+       │ Ticker/Interval    │
+       │ Loop (e.g., 30s)   │
+       └─────┬──────────────┘
+             │
+       ┌─────▼─────────────────┐
+       │ Query due follow-ups  │
+       │ WHERE:                │
+       │  - is_notified=false  │
+       │  - followuptimestamp  │
+       │    <= NOW()           │
+       └─────┬─────────────────┘
+             │
+       ┌─────▼──────────────────────────┐
+       │ For each due:                  │
+       │ 1. Get emp_id                  │
+       │ 2. Get expo push token from DB │
+       │ 3. Send via Expo               │
+       └─────┬──────────────────────────┘
+             │
+       ┌─────▼──────────────┐
+       │ Update follow-up:  │
+       │ is_notified=true   │
+       └────────────────────┘
+----
+
+**Responsibilities:**
+
+* Monitor database for pending follow-ups
+* Retrieve push tokens from database
+* Send Expo Push Notifications
+* Mark notifications as sent
+* Handle delivery failures gracefully
+
+==== 3. **Email Parser Service**
+
+[source, text]
+----
+┌────────────────────────────────┐
+│  Email Parser Service          │
+│  (Standalone daemon)           │
+└───────────┬────────────────────┘
+            │
+      ┌─────▼──────────┐
+      │ Monitor inbox  │
+      │ (via IMAP/API) │
+      └─────┬──────────┘
+            │
+      ┌─────▼─────────────┐
+      │ Parse email:      │
+      │ - Sender info     │
+      │ - Subject         │
+      │ - Body text       │
+      └─────┬─────────────┘
+            │
+      ┌─────▼──────────────┐
+      │ Extract details:   │
+      │ - Property info    │
+      │ - Budget           │
+      │ - Requirements     │
+      └─────┬──────────────┘
+            │
+      ┌─────▼──────────────────┐
+      │ POST to main API:      │
+      │ /create_lead OR        │
+      │ /create_requirement    │
+      └────────────────────────┘
+----
+
+**Responsibilities:**
+
+* Listen for incoming emails
+* Parse email content for CRM data
+* Extract structured information
+* Call main API to create leads/requirements
+* Log parsing results
+
+---
+
+## Data Flow Architecture
+
+=== Typical Request Flow
+
+[source, text]
+----
+1. USER INITIATES REQUEST
+   └─> Mobile app sends: POST /leads with JSON body
+
+2. NETWORK LAYER
+   └─> Nginx receives on :443 (HTTPS)
+       └─> Validates SSL certificate
+       └─> Terminates TLS connection
+       └─> Forwards plain HTTP to app on :8080
+
+3. ROUTING LAYER
+   └─> Gorilla Mux matches route to handler
+   
+4. AUTHENTICATION LAYER
+   └─> Extract "Authorization: Bearer {token}"
+   └─> Validate JWT signature with secret
+   └─> Check token expiration
+   └─> Extract claims (employee_id, tenant_id)
+   └─> Return 401 if invalid
+
+5. AUTHORIZATION LAYER
+   └─> Check user's tenant subscription status
+   └─> Verify subscription is active
+   └─> Return 403 if expired
+
+6. RATE LIMITING LAYER
+   └─> Check user's request count in last minute
+   └─> Return 429 if exceeded limit
+   └─> Increment counter in memory
+
+7. BUSINESS LOGIC LAYER
+   └─> Parse request body JSON
+   └─> Validate required fields
+   └─> Perform business rules
+     └─> Check if lead/employee exists
+     └─> if does not exist, create and set followup
+     └─> Transform data
+
+8. DATA ACCESS LAYER
+   └─> Build SQL INSERT query
+   └─> Bind parameters (prevent SQL injection)
+   └─> Execute within transaction
+   └─> Commit or rollback on error
+
+9. DATABASE LAYER
+   └─> PostgreSQL processes transaction
+   └─> Writes to lead table
+   └─> Updates indexes
+   └─> Returns inserted row
+
+10. RESPONSE LAYER
+    └─> Convert database result to JSON
+    └─> Set HTTP status 201 Created
+    └─> Write JSON response
+
+11. NETWORK LAYER
+    └─> Nginx forwards response
+    └─> Mobile app receives JSON
+----
+
+---
+
+## Service Communication
+
+=== Synchronous Communication
+
+**App ↔ PostgreSQL**
+
+* REST API makes database queries
+* Connection pooling for efficiency
+* Transactions for consistency
+* Prepared statements for security
+
+**Nginx ↔ App**
+
+* HTTP load balancing
+* Connection reuse
+* Keep-alive support
+
+=== Asynchronous Communication
+
+**Notifier ↔ Expo Push Service**
+
+* Asynchronous, non-blocking
+* Retry logic for failed deliveries
+* No direct coupling
+
+**Parser ↔ App**
+
+* HTTP API calls for data creation
+* Decoupled from main request flow
+* Failures don't block main system
+
+---
+
+## Deployment Architecture
+
+=== Local Development (Docker Compose)
+
+[source, yaml]
+----
+version: 3.8
+services:
+  nginx-proxy:    # SSL/reverse proxy
+    image: crm/nginx:latest
+    ports: 80:80, 443:443
+
+  app:            # Main API
+    image: crm/crm:latest
+    depends_on: db
+    environment: DB_HOST=crm_db
+
+  db:             # PostgreSQL
+    image: crm/crm-db:latest
+    volumes: db_data:/var/lib/postgresql/data
+
+  notifier:       # Background service
+    image: crm/crm-notifier:latest
+    depends_on: db
+
+  parser:         # Email parsing
+    image: crm/crm-parser:latest
+    depends_on: app
+----
+
+=== Production Deployment
+
+[source, text]
+----
+┌─────────────────────────────────────┐
+│    Load Balancer (AWS ALB/NLB)      │
+│    or Kubernetes Ingress            │
+└────────────┬────────────────────────┘
+             │
+    ┌────────┴─────────┐
+    │                  │
+┌───▼────┐        ┌───▼────┐
+│ App 1  │        │ App 2  │   (Horizontal Scaling)
+│:8080   │        │:8080   │
+└───┬────┘        └───┬────┘
+    │                 │
+    └────────┬────────┘
+             │
+     ┌───────▼────────┐
+     │  PostgreSQL    │
+     │ (Primary/      │
+     │  Replica)      │
+     │ Managed backup │
+     └────────────────┘
+----
+
+---
+
+## Security Architecture
+
+=== Defense in Depth
+
+[source, text]
+----
+┌──────────────────────────────────┐
+│   Network Perimeter              │
+│  (Firewall, WAF, DDoS Protection)│
+└──────────────────────────────────┘
+              │
+┌──────────────▼──────────────────┐
+│   TLS Encryption (Nginx)         │
+│  (HTTPS 443 → HTTP 8080)         │
+└──────────────▼──────────────────┘
+               │
+┌──────────────▼──────────────────┐
+│   API Gateway                    │
+│  (CORS Policy, Rate Limiting)    │
+└──────────────▼──────────────────┘
+               │
+┌──────────────▼──────────────────┐
+│   Authentication Layer           │
+│  (JWT Signature Validation)      │
+└──────────────▼──────────────────┘
+               │
+┌──────────────▼──────────────────┐
+│   Authorization Layer            │
+│  (Subscription & Permission)     │
+└──────────────▼──────────────────┘
+               │
+┌──────────────▼──────────────────┐
+│   Business Logic Layer           │
+│  (Input Validation, Sanitization)│
+└──────────────▼──────────────────┘
+               │
+┌──────────────▼──────────────────┐
+│   Database Layer                 │
+│  (Parameterized Queries)         │
+│  (Row-level Multi-tenancy)       │
+└──────────────▼──────────────────┘
+               │
+┌──────────────▼──────────────────┐
+│   Persistent Storage (TBD)       │
+│  (Encrypted Backups)             │
+└──────────────────────────────────┘
+----
+
+---
+
+## Scalability Considerations
+
+=== Horizontal Scaling (we prefer this)
+
+The architecture supports adding more instances:
+
+1. **API Servers**: Add more app containers behind load balancer
+2. **Notifier Instances**: Multiple notifiers can safely coexist (use database locking for task distribution)
+3. **Database Replication**: Read replicas for analytics queries
+4. **Caching Layer**: Add Redis for session/token caching (future)
+
+=== Vertical Scaling
+
+Increase resources for single instance:
+* More CPU for concurrent request handling
+* More RAM for connection pooling
+* Faster disk for database performance
+
+=== Database Scaling
+
+* Connection pooling to limit resource usage
+* Indexing on frequently queried columns
+* Query optimization for complex operations
+* Partitioning for large tables (future)
+
+---
+
+## Reliability Features
+
+=== High Availability
+
+1. **Health Checks**: `/health` endpoint is provided for continous health checks.
+2. **Graceful Shutdown**: Drains connections on SIGTERM
+3. **Retry Logic**: Automatic retries for transient failures
+4. **Circuit Breaker**: Prevent cascading failures
+
+=== Data Durability
+
+1. **ACID Transactions**: All writes are atomic
+2. **Database Backups**: Regular snapshots
+3. **Replication**: Data copied to standby nodes
+4. **Write Ahead Logs**: Data persisted before acknowledged
+
+=== Observability
+
+1. **Structured Logging**: JSON logs for analysis
+2. **Request Tracing**: Unique IDs for tracking
+3. **Error Tracking**: Detailed error context
+4. **Performance Metrics**: Response time, throughput
+
+---
+
+== Architecture Patterns Used
+
+=== Layered Architecture
+Separation of concerns with distinct layers (routing, auth, logic, persistence)
+
+=== API Gateway Pattern
+Nginx acts as single entry point for all client requests
+
+=== Database Per Tenant
+While data is in same database, queries are filtered by tenant_id (logical isolation)
+
+=== Circuit Breaker
+Rate limiting acts as circuit breaker for overloaded system
+
+=== Health Check Pattern
+Built-in health checks for load balancer integration
+
+---
+
+## Integration Points
+
+=== Mobile Frontend (React Native/Expo)
+
+* REST API with JSON request/response
+* Bearer token authentication
+* Push notifications via Expo SDK
+* Offline data sync using local storage
+
+=== External Services
+
+* **Expo Push Service**: Sends notifications to mobile devices
+* **Email System**: Parser receives emails from mailbox
+* **Cloud Storage** (optional): Backups to S3 or similar
+
+---
+
+== Performance Characteristics
+
+[cols="35%,30%,35%"]
+|===
+| Metric | Target | Achieved
+
+| API Response Time (p95) | < 100ms | ~50ms (typical)
+| Throughput (requests/sec) | 100+ | Depends on DB queries
+| Connection Pool Size | 25 | Configurable
+| JWT Validation Time | < 5ms | ~2-3ms
+| Database Query Time | < 50ms | Varies by complexity
+|===
+
+---
+
+== References
+
+* link:./03-CORE-MODULES.adoc[Core Modules Documentation]
+* link:../database/04-DATABASE-DESIGN.adoc[Database Design]
+* link:../deployment/07-DEPLOYMENT-GUIDE.adoc[Deployment Guide]
+* link:../design-patterns/05-SYSTEM-DESIGN-PRINCIPLES.adoc[Design Principles]
+
+---
+
+*Last Updated: May 2026*
