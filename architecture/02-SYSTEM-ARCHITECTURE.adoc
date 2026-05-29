@@ -24,7 +24,7 @@ The CRM Backend employs a layered, service-oriented architecture designed for sc
                                  │
 ┌────────────────────────────────▼─────────────────────────────────────┐
 │                   NGINX (Reverse Proxy & SSL)                         │
-│              api.ydadigitals.com (port 443) → :8080                   │
+│      Cert for api.example.com (port 443) → :8080                      │
 │  ✓ SSL/TLS Termination  ✓ Load Balancing  ✓ CORS Headers             │
 └────────────────────────────────┬─────────────────────────────────────┘
                                  │
