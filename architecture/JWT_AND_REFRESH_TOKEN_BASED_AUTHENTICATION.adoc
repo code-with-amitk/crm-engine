@@ -1,0 +1,61 @@
+= 4. JWT AND REFRESH TOKEN BASED AUTHENTICATION 
+:doctype: article
+:toc: right
+:toc-title: Contents
+:source-highlighter: coderay
+
+== Overview
+
+CRM does not solely relies on JWT token, but deploys 2 token for passwordless login.
+
+== JWT Token
+JWT token is assigned to a user when user Authenticates and then token is used as Bearer token in every request to access the REST endpoint.
+
+=== What is Json Web Token / oauth_token / auth_token
+- This is open standard (RFC 7519) used for securely transmitting information between two parties as a JSON object. Mostly used for authentication.
+- Usage? For authentication on the web, ie authentication to RESTFul API
+
+=== Disecting token
+- A JWT is assigned to user as a authentication token
+- JWTs consist of three parts: (header . payload . signature)
+```
+jwt-token = header.payload.signature
+{"token":"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6IiIsImV4cCI6MTc0MDU1OTk2NX0.Dck0cV04Vv7G6ciMt2qvE5_fS2ZMpl5aFuXwKNnD3M0"}
+
+struct header_st = {
+  "alg": "HS256",
+  "typ": "JWT",
+}
+header = base64Encode(header_st)
+
+struct payload_st= {
+  "email": email,
+  "exp":   timestamp_to_expiry
+}
+payload = base64Encode(payload_st)
+
+Signature = HMAC_SHA256(base64UrlEncode(header) + "." + base64UrlEncode(payload), secret)
+```
+
+=== Issue with 1 Token System(ie only JWT Token)?
+- JWT Token is often associated with Password, ie whenever user entered correct password a new JWT token is provided to the user.
+
+** Long JWT Token expiry(3 months): if JWT token expiry is kept for longer period and token is compromised. Malicious user can attack system for longer duration of time.
+
+** Short JWT Token expiry(24 hours): if JWT token expiry is smaller (ie 1 day), then after every 1 day user has to enter his password again.
+- Solution: Maintain 2 tokens: Short lived(24 hours): access token = JWT Token, Long lived(90 days): Refresh token
+
+== Refresh Token
+- What? refresh Token is not a JWT Token, its a unique string(uuid)
+- Advantages?
+
+1. It prevents long lived token from floating around on internet
+2. Only short lived token(15 min or 1 hour life) token floats on wire, it they are compromised then even, attack duration is reduced.
+3. User need not to enter password again and again in case JWT token has expired and needs renewal.
+4. Long lived JWT tokens are hard to revoke and permanent key to system for entire duration(eg: 90 days)
+
+=== Flow
+- Now Server returns 2 tokens on login to frontend
+
+1. access_token = JWT Token: short‑lived JWT (for example, 15–60 minutes).
+2. refresh_token: long‑lived random string stored server‑side (e.g., 7–90 days)
