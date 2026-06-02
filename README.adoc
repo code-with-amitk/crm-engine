@@ -15,7 +15,7 @@ This documentation provides a comprehensive technical reference for the CRM Back
 * **link:./01-INTRODUCTION.adoc[1. Introduction & Vision]** - Business context and system goals
 * **link:./architecture/02-SYSTEM-ARCHITECTURE.adoc[2. System Architecture]** - High-level system design and components
 * **link:./architecture/03-CORE-MODULES.adoc[3. Core Modules]** - In-depth module documentation
-* **link:./architecture/architecture/JWT_AND_REFRESH_TOKEN_BASED_AUTHENTICATION.adoc[04. Authentication using JWT and Refresh Token]** - Flow of JWT, Refresh Token assignment
+* **link:./architecture/JWT_AND_REFRESH_TOKEN_BASED_AUTHENTICATION.adoc[04. Authentication using JWT and Refresh Token]** - Flow of JWT, Refresh Token assignment
 * **link:./database/04-DATABASE-DESIGN.adoc[4. Database Design]** - Schema, relationships, and data models
 * **link:./design-patterns/05-SYSTEM-DESIGN-PRINCIPLES.adoc[5. System Design Principles]** - ACID, Availability, Consistency, Fault Tolerance
 * **link:./api/06-API-REFERENCE.adoc[6. API Reference]** - Complete REST API documentation
