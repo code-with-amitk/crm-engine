@@ -37,7 +37,7 @@ This documentation provides a comprehensive technical reference for the CRM Back
 == Key Features
 
 * *Multi-Tenant Architecture*: Secure logical isolation of tenant data
-* *JWT-Based Authentication*: Stateless authentication with token refresh mechanism
+* *JWT & Refresh Token based Authentication*: Stateless authentication with token refresh mechanism
 * *Rate Limiting*: Distributed-ready rate limiting (login & user-level)
 * *Real-time Notifications*: Expo Push Notifications integration for mobile alerts
 * *Comprehensive Logging*: Structured JSON logging with Zap
