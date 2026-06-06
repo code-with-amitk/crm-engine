@@ -16,12 +16,12 @@ This documentation provides a comprehensive technical reference for the CRM Back
 * **link:./architecture/02-SYSTEM-ARCHITECTURE.adoc[2. System Architecture]** - High-level system design and components
 * **link:./architecture/03-CORE-MODULES.adoc[3. Core Modules]** - In-depth module documentation
 * **link:./architecture/JWT_AND_REFRESH_TOKEN_BASED_AUTHENTICATION.adoc[04. Authentication using JWT and Refresh Token]** - Flow of JWT, Refresh Token assignment
-* **link:./database/04-DATABASE-DESIGN.adoc[4. Database Design]** - Schema, relationships, and data models
-* **link:./design-patterns/05-SYSTEM-DESIGN-PRINCIPLES.adoc[5. System Design Principles]** - ACID, Availability, Consistency, Fault Tolerance
-* **link:./api/06-API-REFERENCE.adoc[6. API Reference]** - Complete REST API documentation
-* **link:./deployment/07-DEPLOYMENT-GUIDE.adoc[7. Deployment Guide]** - Docker, Kubernetes, Cloud deployment
-* **link:./integration/08-FRONTEND-INTEGRATION.adoc[8. Frontend Integration]** - React Native mobile app integration
-* **link:./deployment/09-OPERATIONS-AND-MONITORING.adoc[9. Operations & Monitoring]** - Logging, observability, troubleshooting
+* **link:./database/04-DATABASE-DESIGN.adoc[5. Database Design]** - Schema, relationships, and data models
+* **link:./design-patterns/05-SYSTEM-DESIGN-PRINCIPLES.adoc[6. System Design Principles]** - ACID, Availability, Consistency, Fault Tolerance
+* **link:./api/06-API-REFERENCE.adoc[7. API Reference]** - Complete REST API documentation
+* **link:./deployment/07-DEPLOYMENT-GUIDE.adoc[8. Deployment Guide]** - Docker, Kubernetes, Cloud deployment
+* **link:./integration/08-FRONTEND-INTEGRATION.adoc[9. Frontend Integration]** - React Native mobile app integration
+* **link:./deployment/09-OPERATIONS-AND-MONITORING.adoc[10. Operations & Monitoring]** - Logging, observability, troubleshooting
 
 ---
 
